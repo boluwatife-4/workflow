@@ -607,3 +607,56 @@
     (ok true)
   )
 )
+
+;; READ-ONLY QUERY FUNCTIONS
+
+;; Retrieve complete job information
+(define-read-only (get-job-details (job-id uint))
+  (map-get? jobs { job-id: job-id })
+)
+
+;; Get user reputation data
+(define-read-only (get-user-rating (user principal))
+  (map-get? user-ratings { user: user })
+)
+
+;; Fetch specific bid details
+(define-read-only (get-bid
+    (job-id uint)
+    (bidder principal)
+  )
+  (map-get? bids {
+    job-id: job-id,
+    bidder: bidder,
+  })
+)
+
+;; List all bidders for a job
+(define-read-only (get-job-bidders (job-id uint))
+  (default-to { bidders: (list) } (map-get? job-bidders { job-id: job-id }))
+)
+
+;; Access dispute information
+(define-read-only (get-dispute-details (job-id uint))
+  (map-get? disputes { job-id: job-id })
+)
+
+;; Get escrow status
+(define-read-only (get-escrow-status (job-id uint))
+  (map-get? escrow { job-id: job-id })
+)
+
+;; Get user activity status
+(define-read-only (get-user-activity (user principal))
+  (map-get? user-activity { user: user })
+)
+
+;; Get current job counter
+(define-read-only (get-job-counter)
+  (var-get job-counter)
+)
+
+;; Check if user can perform action (rate limiting)
+(define-read-only (can-user-act (user principal) (action (string-ascii 10)))
+  (check-rate-limit user action)
+)
