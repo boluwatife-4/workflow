@@ -394,3 +394,109 @@
     (ok true)
   )
 )
+
+;; Validate that freelancer is in the bidders list
+(define-private (is-valid-bidder (job-id uint) (freelancer principal))
+  (let ((bidders-data (get-job-bidders job-id)))
+    (is-some (index-of (get bidders bidders-data) freelancer))
+  )
+)
+
+;; Award project to selected freelancer with enhanced validation
+(define-public (accept-bid
+    (job-id uint)
+    (freelancer principal)
+  )
+  (let (
+      (job (unwrap! (map-get? jobs { job-id: job-id }) ERR-INVALID-JOB))
+      (bid (unwrap!
+        (map-get? bids {
+          job-id: job-id,
+          bidder: freelancer,
+        })
+        ERR-INVALID-JOB
+      ))
+    )
+    ;; Input validation
+    (asserts! (> job-id u0) ERR-INVALID-INPUT)
+    ;; Validate freelancer is a legitimate bidder
+    (asserts! (is-valid-bidder job-id freelancer) ERR-NOT-AUTHORIZED)
+    ;; Authorization and validation
+    (asserts! (is-eq tx-sender (get client job)) ERR-NOT-AUTHORIZED)
+    (asserts! (is-eq (get status job) "open") ERR-INVALID-STATUS)
+    (asserts! (is-eq (get status bid) "pending") ERR-INVALID-STATUS)
+    
+    ;; Update job status with validated freelancer
+    (map-set jobs { job-id: job-id }
+      (merge job {
+        status: "in-progress",
+        freelancer: (some freelancer),
+      })
+    )
+    
+    ;; Update bid status for validated freelancer
+    (map-set bids {
+      job-id: job-id,
+      bidder: freelancer,
+    }
+      (merge bid { status: "accepted" })
+    )
+    
+    (ok true)
+  )
+)
+
+;; MILESTONE & PAYMENT PROCESSING
+
+;; Enhanced milestone completion with comprehensive validation
+(define-public (complete-milestone (job-id uint))
+  (let (
+      (job (unwrap! (map-get? jobs { job-id: job-id }) ERR-INVALID-JOB))
+      (escrow-data (unwrap! (map-get? escrow { job-id: job-id }) ERR-INVALID-JOB))
+      (current-milestone (get current-milestone job))
+      (milestone-amount (unwrap! (element-at (get milestones job) current-milestone)
+        ERR-MILESTONE-OUT-OF-BOUNDS
+      ))
+    )
+    ;; Input validation
+    (asserts! (> job-id u0) ERR-INVALID-INPUT)
+    ;; Authorization and validation
+    (asserts! (is-eq tx-sender (get client job)) ERR-NOT-AUTHORIZED)
+    (asserts! (is-eq (get status job) "in-progress") ERR-INVALID-STATUS)
+    (asserts! (< current-milestone (len (get milestones job))) ERR-MILESTONE-OUT-OF-BOUNDS)
+    (asserts! (is-some (get freelancer job)) ERR-NOT-AUTHORIZED)
+    (asserts! (get locked escrow-data) ERR-INVALID-STATUS)
+    (asserts! (> milestone-amount u0) ERR-INVALID-INPUT)
+    
+    ;; Process payment to freelancer
+    (try! (as-contract (stx-transfer? milestone-amount tx-sender
+      (unwrap! (get freelancer job) ERR-NOT-AUTHORIZED)
+    )))
+    
+    ;; Advance milestone counter
+    (let ((new-milestone (+ current-milestone u1)))
+      (map-set jobs { job-id: job-id }
+        (merge job { current-milestone: new-milestone })
+      )
+      
+      ;; Check for project completion
+      (if (is-eq new-milestone (len (get milestones job)))
+        (begin
+          (map-set jobs { job-id: job-id }
+            (merge job { 
+              status: "completed",
+              current-milestone: new-milestone
+            })
+          )
+          ;; Unlock escrow
+          (map-set escrow { job-id: job-id }
+            (merge escrow-data { locked: false })
+          )
+        )
+        true
+      )
+    )
+    
+    (ok true)
+  )
+)
