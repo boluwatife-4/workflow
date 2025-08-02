@@ -207,3 +207,90 @@
     (validate-string proposal MIN-PROPOSAL-LENGTH MAX-PROPOSAL-LENGTH)
   )
 )
+
+;; Rate limiting check
+(define-private (check-rate-limit (user principal) (action (string-ascii 10)))
+  (let (
+      (current-block stacks-block-height)
+      (current-day (/ current-block u144)) ;; Assuming ~10 minute blocks, 144 blocks per day
+      (activity (default-to 
+        { 
+          jobs-posted-today: u0,
+          bids-placed-today: u0,
+          last-activity-block: u0,
+          last-reset-day: u0
+        } 
+        (map-get? user-activity { user: user })
+      ))
+    )
+    (let (
+        (reset-needed (> current-day (get last-reset-day activity)))
+        (updated-activity (if reset-needed
+          {
+            jobs-posted-today: u0,
+            bids-placed-today: u0,
+            last-activity-block: current-block,
+            last-reset-day: current-day
+          }
+          activity
+        ))
+      )
+      (if (is-eq action "job")
+        (< (get jobs-posted-today updated-activity) MAX-DAILY-JOBS)
+        (< (get bids-placed-today updated-activity) MAX-DAILY_BIDS)
+      )
+    )
+  )
+)
+
+;; Update user activity after successful action
+(define-private (update-user-activity (user principal) (action (string-ascii 10)))
+  (let (
+      (current-block stacks-block-height)
+      (current-day (/ current-block u144))
+      (activity (default-to 
+        { 
+          jobs-posted-today: u0,
+          bids-placed-today: u0,
+          last-activity-block: u0,
+          last-reset-day: u0
+        } 
+        (map-get? user-activity { user: user })
+      ))
+    )
+    (let (
+        (reset-needed (> current-day (get last-reset-day activity)))
+        (base-activity (if reset-needed
+          {
+            jobs-posted-today: u0,
+            bids-placed-today: u0,
+            last-activity-block: current-block,
+            last-reset-day: current-day
+          }
+          activity
+        ))
+      )
+      (map-set user-activity { user: user }
+        (if (is-eq action "job")
+          (merge base-activity { 
+            jobs-posted-today: (+ (get jobs-posted-today base-activity) u1)
+          })
+          (merge base-activity { 
+            bids-placed-today: (+ (get bids-placed-today base-activity) u1)
+          })
+        )
+      )
+    )
+  )
+)
+
+;; Job ownership verification
+(define-private (is-job-participant (job-id uint) (user principal))
+  (match (map-get? jobs { job-id: job-id })
+    job (or 
+      (is-eq user (get client job))
+      (is-eq (some user) (get freelancer job))
+    )
+    false
+  )
+)
