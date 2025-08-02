@@ -101,3 +101,109 @@
     average-rating: uint,
   }
 )
+
+;; Dispute resolution and community governance
+(define-map disputes
+  { job-id: uint }
+  {
+    initiator: principal,
+    reason: (string-ascii 500),
+    votes-release: uint,
+    votes-refund: uint,
+    resolved: bool,
+    created-at: uint,
+  }
+)
+
+;; Secure escrow for payment protection
+(define-map escrow
+  { job-id: uint }
+  {
+    amount: uint,
+    locked: bool,
+  }
+)
+
+;; Enhanced user activity tracking with rate limiting
+(define-map user-activity 
+  { user: principal }
+  { 
+    jobs-posted-today: uint,
+    bids-placed-today: uint,
+    last-activity-block: uint,
+    last-reset-day: uint,
+  }
+)
+
+;; VALIDATION FUNCTIONS
+
+;; Validate string input with length constraints
+(define-private (validate-string 
+    (input (string-ascii 500)) 
+    (min-len uint) 
+    (max-len uint)
+  )
+  (let ((str-len (len input)))
+    (and 
+      (>= str-len min-len)
+      (<= str-len max-len)
+      ;; Check for non-empty after trimming (basic check)
+      (> str-len u0)
+    )
+  )
+)
+
+;; Validate numeric input within bounds
+(define-private (validate-amount (amount uint) (min-val uint) (max-val uint))
+  (and (>= amount min-val) (<= amount max-val))
+)
+
+;; Validate milestone structure
+(define-private (validate-milestones (milestones (list 10 uint)) (total-budget uint))
+  (let (
+      (milestone-count (len milestones))
+      (milestone-sum (fold + milestones u0))
+    )
+    (and 
+      (> milestone-count u0)
+      (<= milestone-count MAX-MILESTONES)
+      (is-eq milestone-sum total-budget)
+      (> milestone-sum u0)
+      ;; Ensure no milestone is zero
+      (is-eq (len (filter is-positive milestones)) milestone-count)
+    )
+  )
+)
+
+;; Helper function to check if value is positive
+(define-private (is-positive (value uint))
+  (> value u0)
+)
+
+;; Comprehensive job input validation
+(define-private (validate-job-input 
+    (title (string-ascii 100))
+    (description (string-ascii 500))
+    (budget uint)
+    (milestones (list 10 uint))
+  )
+  (and
+    (validate-string title MIN-TITLE-LENGTH MAX-TITLE-LENGTH)
+    (validate-string description MIN-DESCRIPTION-LENGTH MAX-DESCRIPTION-LENGTH)
+    (validate-amount budget MIN-BUDGET MAX-BUDGET)
+    (validate-milestones milestones budget)
+  )
+)
+
+;; Validate bid input
+(define-private (validate-bid-input 
+    (job-id uint)
+    (amount uint)
+    (proposal (string-ascii 500))
+  )
+  (and
+    (> job-id u0)
+    (validate-amount amount MIN-BUDGET MAX-BUDGET)
+    (validate-string proposal MIN-PROPOSAL-LENGTH MAX-PROPOSAL-LENGTH)
+  )
+)
