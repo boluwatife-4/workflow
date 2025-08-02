@@ -500,3 +500,110 @@
     (ok true)
   )
 )
+
+;; DISPUTE RESOLUTION SYSTEM
+
+;; Initiate dispute resolution process with enhanced validation
+(define-public (raise-dispute
+    (job-id uint)
+    (reason (string-ascii 500))
+  )
+  (let ((job (unwrap! (map-get? jobs { job-id: job-id }) ERR-INVALID-JOB)))
+    ;; Input validation
+    (asserts! (> job-id u0) ERR-INVALID-INPUT)
+    (asserts! (validate-string reason MIN-REASON-LENGTH MAX-REASON-LENGTH) ERR-INVALID-INPUT)
+    ;; Verify authorized party
+    (asserts!
+      (or
+        (is-eq tx-sender (get client job))
+        (is-eq tx-sender (unwrap! (get freelancer job) ERR-NOT-AUTHORIZED))
+      )
+      ERR-NOT-AUTHORIZED
+    )
+    ;; Ensure valid status for dispute
+    (asserts! (or (is-eq (get status job) "in-progress") (is-eq (get status job) "completed")) ERR-INVALID-STATUS)
+    ;; Ensure no existing dispute
+    (asserts! (is-none (map-get? disputes { job-id: job-id })) ERR-DISPUTE-EXISTS)
+    
+    ;; Create dispute record
+    (map-set disputes { job-id: job-id } {
+      initiator: tx-sender,
+      reason: reason,
+      votes-release: u0,
+      votes-refund: u0,
+      resolved: false,
+      created-at: stacks-block-height,
+    })
+    
+    ;; Update job status
+    (map-set jobs { job-id: job-id }
+      (merge job { status: "disputed" })
+    )
+    
+    (ok true)
+  )
+)
+
+;; Community voting on dispute resolution with enhanced validation
+(define-public (vote-on-dispute
+    (job-id uint)
+    (vote-release bool)
+  )
+  (let ((dispute (unwrap! (map-get? disputes { job-id: job-id }) ERR-INVALID-JOB)))
+    ;; Input validation
+    (asserts! (> job-id u0) ERR-INVALID-INPUT)
+    ;; Ensure dispute is active
+    (asserts! (not (get resolved dispute)) ERR-INVALID-STATUS)
+    ;; Prevent voting by dispute participants
+    (asserts! (not (is-job-participant job-id tx-sender)) ERR-NOT-AUTHORIZED)
+    
+    ;; Record vote
+    (map-set disputes { job-id: job-id }
+      (merge dispute {
+        votes-release: (if vote-release
+          (+ (get votes-release dispute) u1)
+          (get votes-release dispute)
+        ),
+        votes-refund: (if (not vote-release)
+          (+ (get votes-refund dispute) u1)
+          (get votes-refund dispute)
+        ),
+      })
+    )
+    
+    (ok true)
+  )
+)
+
+;; REPUTATION MANAGEMENT
+
+;; Submit user rating after project completion with enhanced validation
+(define-public (rate-user
+    (user principal)
+    (rating uint)
+  )
+  (let ((current-rating (default-to {
+      total-rating: u0,
+      number-of-ratings: u0,
+      average-rating: u0,
+    }
+      (map-get? user-ratings { user: user })
+    )))
+    ;; Input validation
+    (asserts! (and (>= rating u1) (<= rating u5)) ERR-INVALID-RATING)
+    ;; Prevent self-rating
+    (asserts! (not (is-eq tx-sender user)) ERR-NOT-AUTHORIZED)
+    
+    ;; Update rating statistics
+    (let ((new-total (+ (get total-rating current-rating) rating))
+          (new-count (+ (get number-of-ratings current-rating) u1)))
+      (map-set user-ratings { user: user } {
+        total-rating: new-total,
+        number-of-ratings: new-count,
+        average-rating: (/ new-total new-count),
+      })
+    )
+    
+    (ok true)
+  )
+)
