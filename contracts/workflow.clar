@@ -294,3 +294,103 @@
     false
   )
 )
+
+;; PROJECT MANAGEMENT FUNCTIONS
+
+;; Create new job posting with comprehensive validation and escrow-backed funding
+(define-public (post-job
+    (title (string-ascii 100))
+    (description (string-ascii 500))
+    (budget uint)
+    (milestones (list 10 uint))
+  )
+  (let ((job-id (+ (var-get job-counter) u1)))
+    ;; Input validation
+    (asserts! (validate-job-input title description budget milestones) ERR-INVALID-INPUT)
+    ;; Rate limiting
+    (asserts! (check-rate-limit tx-sender "job") ERR-RATE-LIMITED)
+    
+    ;; Transfer budget to escrow
+    (try! (stx-transfer? budget tx-sender (as-contract tx-sender)))
+    
+    ;; Create job record with validated inputs
+    (map-set jobs { job-id: job-id } {
+      client: tx-sender,
+      title: title,
+      description: description,
+      budget: budget,
+      status: "open",
+      freelancer: none,
+      milestones: milestones,
+      current-milestone: u0,
+      created-at: stacks-block-height,
+    })
+    
+    ;; Update job counter
+    (var-set job-counter job-id)
+    
+    ;; Initialize escrow
+    (map-set escrow { job-id: job-id } {
+      amount: budget,
+      locked: true,
+    })
+    
+    ;; Initialize bidders list
+    (map-set job-bidders { job-id: job-id } { bidders: (list) })
+    
+    ;; Update user activity
+    (update-user-activity tx-sender "job")
+    
+    (ok job-id)
+  )
+)
+
+;; Submit proposal for available project with enhanced validation
+(define-public (place-bid
+    (job-id uint)
+    (amount uint)
+    (proposal (string-ascii 500))
+  )
+  (let (
+      (job (unwrap! (map-get? jobs { job-id: job-id }) ERR-INVALID-JOB))
+      (current-bidders (default-to { bidders: (list) } (map-get? job-bidders { job-id: job-id })))
+    )
+    ;; Input validation
+    (asserts! (validate-bid-input job-id amount proposal) ERR-INVALID-INPUT)
+    ;; Rate limiting
+    (asserts! (check-rate-limit tx-sender "bid") ERR-RATE-LIMITED)
+    ;; Business logic validation
+    (asserts! (is-eq (get status job) "open") ERR-INVALID-STATUS)
+    (asserts!
+      (is-none (map-get? bids {
+        job-id: job-id,
+        bidder: tx-sender,
+      }))
+      ERR-ALREADY-BIDDED
+    )
+    (asserts! (< (len (get bidders current-bidders)) MAX-BIDDERS) ERR-TOO-MANY-BIDDERS)
+    
+    ;; Record bid with validated inputs
+    (map-set bids {
+      job-id: job-id,
+      bidder: tx-sender,
+    } {
+      amount: amount,
+      proposal: proposal,
+      status: "pending",
+      created-at: stacks-block-height,
+    })
+    
+    ;; Add to bidders list
+    (map-set job-bidders { job-id: job-id } { 
+      bidders: (unwrap! (as-max-len? (append (get bidders current-bidders) tx-sender) u100)
+        ERR-TOO-MANY-BIDDERS
+      ) 
+    })
+    
+    ;; Update user activity
+    (update-user-activity tx-sender "bid")
+    
+    (ok true)
+  )
+)
