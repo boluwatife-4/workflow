@@ -1,0 +1,103 @@
+;; Title: WorkFlow - Next-Generation Decentralized Freelance Platform
+;;
+;; Summary:
+;; WorkFlow transforms the gig economy by creating a transparent, secure, and 
+;; decentralized marketplace where talent meets opportunity without intermediaries.
+;; Built on Stacks blockchain with Bitcoin-level security guarantees.
+;;
+;; Description:
+;; WorkFlow empowers the future of work through:
+;; - Smart contract-based escrow system ensuring payment security
+;; - Milestone-driven project management with automated releases  
+;; - Community-governed dispute resolution mechanism
+;; - Immutable reputation system building long-term trust
+;; - Zero-fee direct STX transactions between parties
+;; - Transparent bidding process with complete project visibility
+;;
+;; Leveraging Stacks Layer 2 architecture for high throughput while maintaining
+;; the immutability and security of Bitcoin's base layer. Every transaction,
+;; rating, and dispute resolution is permanently recorded on-chain.
+
+;; CONSTANTS & ERROR DEFINITIONS
+
+(define-constant ERR-NOT-AUTHORIZED (err u100))
+(define-constant ERR-INVALID-JOB (err u101))
+(define-constant ERR-INVALID-STATUS (err u102))
+(define-constant ERR-INSUFFICIENT-FUNDS (err u103))
+(define-constant ERR-ALREADY-BIDDED (err u104))
+(define-constant ERR-DISPUTE-EXISTS (err u105))
+(define-constant ERR-INVALID-RATING (err u106))
+(define-constant ERR-TOO-MANY-BIDDERS (err u107))
+(define-constant ERR-INVALID-INPUT (err u108))
+(define-constant ERR-MILESTONE-OUT-OF-BOUNDS (err u109))
+(define-constant ERR-INVALID-MILESTONES (err u110))
+(define-constant ERR-RATE-LIMITED (err u111))
+
+;; Input validation constants
+(define-constant MIN-BUDGET u1000000) ;; 1 STX minimum
+(define-constant MAX-BUDGET u100000000000) ;; 100,000 STX maximum
+(define-constant MAX-BIDDERS u100)
+(define-constant MAX-MILESTONES u10)
+(define-constant MIN-TITLE-LENGTH u3)
+(define-constant MAX-TITLE-LENGTH u100)
+(define-constant MIN-DESCRIPTION-LENGTH u10)
+(define-constant MAX-DESCRIPTION-LENGTH u500)
+(define-constant MIN-PROPOSAL-LENGTH u20)
+(define-constant MAX-PROPOSAL-LENGTH u500)
+(define-constant MIN-REASON-LENGTH u10)
+(define-constant MAX-REASON-LENGTH u500)
+(define-constant MAX-DAILY-JOBS u10)
+(define-constant MAX-DAILY_BIDS u50)
+
+;; STATE VARIABLES
+
+(define-data-var job-counter uint u0)
+(define-data-var platform-fee-rate uint u250) ;; 2.5% in basis points
+
+;; DATA STRUCTURES
+
+;; Core job information and project lifecycle tracking
+(define-map jobs
+  { job-id: uint }
+  {
+    client: principal,
+    title: (string-ascii 100),
+    description: (string-ascii 500),
+    budget: uint,
+    status: (string-ascii 20),
+    freelancer: (optional principal),
+    milestones: (list 10 uint),
+    current-milestone: uint,
+    created-at: uint,
+  }
+)
+
+;; Proposal submissions from freelancers
+(define-map bids
+  {
+    job-id: uint,
+    bidder: principal,
+  }
+  {
+    amount: uint,
+    proposal: (string-ascii 500),
+    status: (string-ascii 20),
+    created-at: uint,
+  }
+)
+
+;; Track all bidders for each job posting
+(define-map job-bidders
+  { job-id: uint }
+  { bidders: (list 100 principal) }
+)
+
+;; Comprehensive user reputation system
+(define-map user-ratings
+  { user: principal }
+  {
+    total-rating: uint,
+    number-of-ratings: uint,
+    average-rating: uint,
+  }
+)
